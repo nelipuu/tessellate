@@ -388,11 +388,6 @@ export class Tessellation {
 			const node = transitionNodes[transition++];
 			bundle = node.bundle;
 
-			if(bundle.afterIsInside != afterIsInside) {
-				// console.log('IMPOSSIBLE?', bundle);
-				// this.check(event);
-			}
-
 			const region = bundle.region!;
 			afterIsInside = bundle.afterIsInside;
 			if(afterIsInside) regionInside = region;
@@ -418,8 +413,6 @@ export class Tessellation {
 				this.addVertex(regionInside, event.point, bundle, true, false);
 			}
 		}
-
-		// this.check(event);
 
 		return transitions;
 	}
@@ -496,8 +489,6 @@ export class Tessellation {
 			helperBundle!.region = region;
 		}
 
-		// this.check(event);
-
 		return transitions;
 	}
 
@@ -557,37 +548,6 @@ export class Tessellation {
 		}
 	}
 
-	/* check(event: SweepEvent): void {
-		let errors: string[] = [];
-		let a = false;
-
-		if(this.crossTree.first!.next == this.crossTree.last) return;
-		let pos: u32 = 0;
-
-		for(
-			let bundle = (this.crossTree.first!.next as EdgeNode).bundle;
-			bundle != this.crossTree.last!.bundle;
-			bundle = (bundle.node.next as EdgeNode).bundle
-		) {
-			if(bundle.count & 1) a = !a;
-
-			if(bundle.afterIsInside !== a) errors.push('nesting ' + pos);
-			if(bundle.seen) errors.push('flag ' + pos);
-			++pos;
-			if(pos > 10000) {
-				// debugger;
-				errors.length = 1;
-				break;
-			}
-		}
-
-		if(errors.length) {
-			// console.log(this.steps);
-			// console.log(errors);
-			throw new Error();
-		}
-	} */
-
 	handleNeighbors(event: SweepEvent): void {
 		const eventTree = this.eventTree;
 		const before = event.before!;
@@ -597,6 +557,7 @@ export class Tessellation {
 		let id1 = before.id;
 		let id2 = (before.node.next as EdgeNode).bundle.id;
 
+		// TODO: This key generation limits simultaneous edges crossing the sweep line to 2^26. Unlikely but not impossible situation.
 		if(id1 < id2) {
 			key = (id1 as f64) * (1 << 26 as f64) + (id2 as f64);
 		} else {

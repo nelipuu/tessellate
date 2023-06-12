@@ -82,7 +82,9 @@ function scaleComponent(
 }
 
 function makeExact(point: RationalPoint): point is ExactPoint {
+	// If point has no rational part, its coordinates fit in floats.
 	if(!point.w) return false;
+	// Check if point already has exact rational coordinates computed.
 	if(point.wExact) return true;
 
 	const a = point.a!;
