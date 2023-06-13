@@ -13,6 +13,8 @@ export class MonotoneRegion {
 		isMerge: boolean
 	): Vertex {
 		const w = (point as RationalPoint).w || 1;
+
+		// This is where calculated intersection points get rounded to floats in output.
 		const vertex: Vertex = {
 			x: point.x / w,
 			y: point.y / w,

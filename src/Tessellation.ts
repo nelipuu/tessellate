@@ -5,7 +5,6 @@ import { IntersectionPoint, SweepEvent } from './SweepEvent';
 import { epsilon, perpErrBound1, perpDotSign } from './orient';
 
 type f64 = number;
-type i32 = number;
 type u32 = number;
 
 export type Polygon = Ring[];
@@ -47,11 +46,11 @@ function checkIntersection(a: EdgeBundle, b: EdgeBundle): RationalPoint | null {
 	// to discard obviously nonintersecting lines.
 	if(size < delta || size < -delta) return null;
 
-	const det = perpDotSign(a.x, a.y, a.x2, a.y2, b.x, b.y, b.x2, b.y2);
+	const determinant = perpDotSign(a.x, a.y, a.x2, a.y2, b.x, b.y, b.x2, b.y2);
 
 	// Stop if the intersection is on or above the sweep line. Works because
 	// line segments are oriented downwards and sorted along the sweep line.
-	if(det <= 0) return null;
+	if(determinant <= 0) return null;
 
 	intersection.a = a;
 	intersection.b = b;
@@ -88,15 +87,17 @@ function checkIntersection(a: EdgeBundle, b: EdgeBundle): RationalPoint | null {
 	// Approximate result.
 	const detLeft = (a.x2 - a.x) * (b.y2 - b.y);
 	const detRight = (a.y2 - a.y) * (b.x2 - b.x);
-	const detErr = abs(det) * epsilon + (abs(detLeft) + abs(detRight)) * perpErrBound1;
+	const detErr = abs(determinant) * epsilon + (abs(detLeft) + abs(detRight)) * perpErrBound1;
 
 	const a2Left = (b.x - a.x2) * (b.y2 - a.y2);
 	const a2Right = (b.y - a.y2) * (b.x2 - a.x2);
 	const a2Err = abs(a2) * epsilon + (abs(a2Left) + abs(a2Right)) * perpErrBound1;
 
-	intersection.x = a.x2 * det + (a.x2 - a.x) * a2;
-	intersection.y = a.y2 * det + (a.y2 - a.y) * a2;
-	intersection.w = det;
+	intersection.x = a.x2 * determinant + (a.x2 - a.x) * a2;
+	intersection.y = a.y2 * determinant + (a.y2 - a.y) * a2;
+	intersection.w = determinant;
+
+	// Calculate error bounds.
 	intersection.xErr = (
 		abs(a.x2) * detErr +
 		abs(a.x2 - a.x) * a2Err
@@ -128,7 +129,7 @@ function mergeEdgesIntoNodes(nodes: EdgeNode[], edges: Edge[], edgeNum: u32): Ed
 
 	let edge: Edge | null = edgeNum < edgeCount ? edges[edgeNum] : null;
 	let bundle: EdgeBundle | null;
-	let delta: i32 = 0;
+	let delta: f64 = 0;
 
 	do {
 		bundle = nodeNum-- ? nodes[nodeNum].bundle : null;
@@ -199,7 +200,7 @@ function computeStartPoints(polygon: Polygon, rings: Ring[] = []): PointRef[] {
 	const startPoints: PointRef[] = [];
 
 	// Find all topmost points and leftmost points along top edges.
-	for(let num: i32 = 0; num < polygon.length; ++num) {
+	for(let num: u32 = 0; num < polygon.length; ++num) {
 		const ring = polygon[num];
 		const count = ring.length;
 		if(count < 3) continue;
@@ -243,12 +244,7 @@ function computeStartPoints(polygon: Polygon, rings: Ring[] = []): PointRef[] {
 		if(hasEntry) rings.push(ring);
 	}
 
-	return startPoints.sort(
-		(a: PointRef, b: PointRef): i32 => {
-			const result = a.y - b.y || a.x - b.x || a.pos - b.pos;
-			return (+(result > 0) as i32) - (+(result < 0) as i32);
-		}
-	);
+	return startPoints.sort((a: PointRef, b: PointRef): f64 => a.y - b.y || a.x - b.x || (a.pos - b.pos) as f64);
 }
 
 export class Tessellation {
@@ -557,7 +553,7 @@ export class Tessellation {
 		let id1 = before.id;
 		let id2 = (before.node.next as EdgeNode).bundle.id;
 
-		// TODO: This key generation limits simultaneous edges crossing the sweep line to 2^26. Unlikely but not impossible situation.
+		// TODO: This key generation limits total number of edges to 2^26.
 		if(id1 < id2) {
 			key = (id1 as f64) * (1 << 26 as f64) + (id2 as f64);
 		} else {
@@ -600,8 +596,6 @@ export class Tessellation {
 		let num = 0;
 		const count = bundles.length < nodes.length ? bundles.length : nodes.length;
 
-		// checkTree(this.crossTree, this.steps);
-
 		for(num = 0; num < count; ++num) {
 			nodes[num].bundle = bundles[num];
 			bundles[num].node = nodes[num];
@@ -609,13 +603,12 @@ export class Tessellation {
 
 		// Remove excess nodes.
 		if(bundles.length < nodes.length) {
-			// TODO: Maybe 2 passes, first try removing only leaf nodes or nodes with only one child?
+			// TODO: Maybe optimize here by having 2 passes,
+			// first try removing only leaf nodes or nodes with only one child?
 			while(num < nodes.length) {
 				this.crossTree.remove(nodes[num++]);
 			}
 		}
-
-		// checkTree(this.crossTree, this.steps);
 
 		// Insert extra nodes.
 		if(bundles.length > nodes.length) {
@@ -649,18 +642,12 @@ export class Tessellation {
 	}
 
 	step(): boolean {
-		++this.steps;
 		const event = this.eventTree.first;
 
 		// If no events remain, this algorithm has finished.
-		if(!event) {
-			// console.log(splits, this.nextStart, points, crossings.length, SweepEvent.allocated, EdgeBundle.allocated);
-			return false;
-		}
+		if(!event) return false;
 
 		this.eventTree.remove(event);
-
-		// if(this.steps == 10) debugger;
 
 		let regionBeforeEvent: MonotoneRegion | null = null;
 		let regionAfterEvent: MonotoneRegion | null = null;
@@ -769,8 +756,6 @@ export class Tessellation {
 
 		return true;
 	}
-
-	steps: u32 = 0;
 
 	rings: Ring[] = [];
 	startPoint = {} as RationalPoint;

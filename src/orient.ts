@@ -6,8 +6,9 @@
 */
 
 type f64 = number;
-type i32 = number;
 type u32 = number;
+
+/** Initialize constants for splitting floating point numbers in two halves. */
 
 function initSplit(): [f64, f64] {
 	let half = true;
@@ -36,7 +37,12 @@ export const [
 	epsilon
 ] = initSplit();
 
+/** Error magnitude in floating point perp dot product / 2D matrix determinant, relative to the dot product of matrix diagonals,
+  * when matrix elements are inexact differences between pairs of floating point numbers. */
 export const perpErrBound1 = (epsilon * 16 + 3) * epsilon;
+
+/** Error magnitude in exact perp dot product / 2D matrix determinant, relative to the dot product of matrix diagonals,
+  * when the perp dot is exact but matrix elements are inexact differences between pairs of floating point numbers. */
 const perpErrBound2 = (epsilon * 12 + 2) * epsilon;
 
 /** Error-free product of two floating point numbers.
@@ -81,9 +87,9 @@ export function twoSumLo(a: f64, b: f64, sumHi: f64): f64 {
 /** Error-free sum of two numbers and their rounding errors.
   *
   * @param sum Storage for resulting floating point expansion,
-  * least significant limb first. */
+  * least significant limb first. Four elements will be written, some may be zero. */
 
-export function twoTwoSum(aHi: f64, aLo: f64, bHi: f64, bLo: f64, sum: f64[]): f64[] {
+export function twoTwoSum<Type = f64[] | Float64Array>(aHi: f64, aLo: f64, bHi: f64, bLo: f64, sum: Type): Type {
 	const lolo = aLo + bLo;
 	const hi1 = aHi + lolo;
 	const hi1lo = twoSumLo(aHi, lolo, hi1);
@@ -101,7 +107,7 @@ export function twoTwoSum(aHi: f64, aLo: f64, bHi: f64, bLo: f64, sum: f64[]): f
   * @param sum Array to overwrite with resulting floating point expansion.
   * @return Length of resulting sum. */
 
-export function bigSum(aLen: u32, aList: f64[], bLen: u32, bList: f64[], sum: f64[]): u32 {
+export function bigSum(aLen: u32, aList: f64[] | Float64Array, bLen: u32, bList: f64[] | Float64Array, sum: f64[] | Float64Array): u32 {
 	// Append sentinels to avoid checking end of array.
 	aList[aLen] = Infinity;
 	bList[bLen] = Infinity;
@@ -153,11 +159,13 @@ export function bigSum(aLen: u32, aList: f64[], bLen: u32, bList: f64[], sum: f6
 /** Multiply this arbitrary precision float by a number.
   * See Scale-Expansion from Shewchuk page 21.
   *
-  * @param b Multiplier, a JavaScript floating point number.
+  * @param aLen Number of components in arbitrary precision number.
+  * @param aList Components of arbitrary precision number.
+  * @param b Floating point multiplier.
   * @param product Array to overwrite with resulting floating point expansion.
   * @return Length of resulting product. */
 
-export function smallProd(aLen: u32, aList: f64[], b: f64, product: f64[]): u32 {
+export function smallProd(aLen: u32, aList: f64[] | Float64Array, b: f64, product: f64[] | Float64Array): u32 {
 	let aPos: u32 = 0, prodPos: u32 = 0;
 
 	const b2 = b * splitter;
@@ -191,7 +199,7 @@ export function smallProd(aLen: u32, aList: f64[], b: f64, product: f64[]): u32 
 const tempList: f64[][] = [[], []];
 const tempLen: u32[] = [];
 
-export function bigProd(aLen: u32, aList: f64[], bLen: u32, bList: f64[], product: f64[]): u32 {
+export function bigProd(aLen: u32, aList: f64[] | Float64Array, bLen: u32, bList: f64[] | Float64Array, product: f64[] | Float64Array): u32 {
 	let productLen = 0;
 	let bPos = bLen;
 
@@ -227,12 +235,12 @@ export function bigProd(aLen: u32, aList: f64[], bLen: u32, bList: f64[], produc
 }
 
 // On Chrome, plain arrays worked faster than Float64Array here.
-const sum1: f64[] = [];
-const sum2: f64[] = [];
-const sum3: f64[] = [];
-const sum4: f64[] = [];
+const sum1: f64[] = []; // new Float64Array(12);
+const sum2: f64[] = []; // new Float64Array(5);
+const sum3: f64[] = []; // new Float64Array(9);
+const sum4: f64[] = []; // new Float64Array(9);
 
-export function crossProduct(ax: f64, ay: f64, bx: f64, by: f64, result: f64[]): f64[] {
+export function crossProduct<Type = f64[] | Float64Array>(ax: f64, ay: f64, bx: f64, by: f64, result: Type): Type {
 	const axbyHi = ax * by;
 	const aybxHi = ay * bx;
 	const axbyLo = twoProductLo(ax, by, axbyHi);
@@ -241,7 +249,9 @@ export function crossProduct(ax: f64, ay: f64, bx: f64, by: f64, result: f64[]):
 	return twoTwoSum(axbyHi, axbyLo, -aybxHi, -aybxLo, result);
 }
 
-/** Error-free sign of perp dot product / cross product magnitude / 2x2 matrix determinant. */
+/** Error-free sign of perp dot product / cross product magnitude / 2x2 matrix determinant.
+  *
+  * @return Arbitrary floating point number with sign matching the correct result, or zero if result is zero. */
 
 export function perpDotSign(ax1: f64, ay1: f64, ax2: f64, ay2: f64, bx1: f64, by1: f64, bx2: f64, by2: f64): f64 {
 	// This floating point filter is faster than going straight to arbitrary precision.
@@ -250,15 +260,18 @@ export function perpDotSign(ax1: f64, ay1: f64, ax2: f64, ay2: f64, bx1: f64, by
 
 	const axbyHi = (ax2 - ax1) * (by2 - by1);
 	const aybxHi = (ay2 - ay1) * (bx2 - bx1);
+	let determinant = axbyHi - aybxHi;
 
-	let det = axbyHi - aybxHi;
-	if(axbyHi * aybxHi <= 0) return det;
+	// If products of diagonals have different signs or one of them is zero,
+	// then the sign of their floating point difference will be correct.
+	if(axbyHi * aybxHi <= 0) return determinant;
 
 	let detSum = axbyHi + aybxHi;
 	if(detSum < 0) detSum = -detSum;
 
+	// If determinant is larger than its error bound, its sign must be correct.
 	let maxErr = detSum * perpErrBound1;
-	if(det >= maxErr || -det >= maxErr) return det;
+	if(determinant >= maxErr || -determinant >= maxErr) return determinant;
 
 	// The optimized path below can be commented out to test correct handling of rarer cases.
 
@@ -268,29 +281,33 @@ export function perpDotSign(ax1: f64, ay1: f64, ax2: f64, ay2: f64, bx1: f64, by
 	const sum = twoTwoSum(axbyHi, axbyLo, -aybxHi, -aybxLo, sum1);
 
 	// The order of terms is important here.
-	det = sum[0] + sum[1];
-	det += sum[2];
-	det += sum[3];
+	determinant = sum[0] + sum[1];
+	determinant += sum[2];
+	determinant += sum[3];
 
+	// If determinant is larger than its error bound, its sign must be correct.
 	maxErr = detSum * perpErrBound2;
-	if(det >= maxErr || -det >= maxErr || (
+	if(determinant >= maxErr || -determinant >= maxErr || (
+		// If matrix contents were exact, then our exact determinant is also correct.
 		!twoSumLo(ax2, -ax1, ax2 - ax1) &&
 		!twoSumLo(ay2, -ay1, ay2 - ay1) &&
 		!twoSumLo(bx2, -bx1, bx2 - bx1) &&
 		!twoSumLo(by2, -by1, by2 - by1)
 	)) {
-		return det;
+		return determinant;
 	}
 
 	// One additional optimized path for a yet smaller error bound was omitted here,
 	// because it occurs too rarely to get properly tested in practice.
 
-	// The following slow calculation is only needed when native numbers
+	// The following slow calculation is only needed when native floating point
 	// cannot represent coordinate differences exactly.
 
 	const len = perpDotExact(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2, sum1);
-	return len ? sum1[len - 1] : 0;
+	return len && sum1[len - 1];
 }
+
+/** @return Number of items written into the sum array (any pre-existing additional items should be ignored). */
 
 export function perpDotExact(
 	ax1: f64,
@@ -301,7 +318,7 @@ export function perpDotExact(
 	by1: f64,
 	bx2: f64,
 	by2: f64,
-	sum: f64[]
+	sum: f64[] | Float64Array
 ): u32 {
 	crossProduct(ax2, ax2, by1, by2, sum1);
 	crossProduct(ax1, ax1, by2, by1, sum2);

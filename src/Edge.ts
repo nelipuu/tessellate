@@ -3,7 +3,6 @@ import { MonotoneRegion } from './MonotoneRegion'
 import { perpDotSign, epsilon } from './orient';
 
 type f64 = number;
-type i32 = number;
 type u32 = number;
 
 export interface Point {
@@ -11,23 +10,38 @@ export interface Point {
 	y: f64;
 }
 
-/** Homogeneous 2D coordinates, for representing line segment intersection points using rational numbers. */
+/** Homogeneous 2D coordinates, for representing line segment intersection points using rational numbers.
+  * Contains error bounds from inexact intersection point calculation. */
+
 export interface RationalPoint extends Point {
+	/** Divisor component in 2D homogeneous coordinates. */
 	w: f64;
+	/** Magnitude of X coordinate error. */
 	xErr: f64;
+	/** Magnitude of Y coordinate error. */
 	yErr: f64;
+	/** Magnitude of W coordinate error. */
 	wErr: f64;
 
+	/** First set of collinear edges intersecting at this point. */
 	a: EdgeBundle | null;
+	/** Second set of collinear edges intersecting at this point. */
 	b: EdgeBundle | null;
 
+	/** Exact X coordinate, list of multiple floats with different exponents to sum together. */
 	xExact: f64[] | null;
+	/** Number of components in exact X coordinate. */
 	xExactLen: u32;
+	/** Exact Y coordinate, list of multiple floats with different exponents to sum together. */
 	yExact: f64[] | null;
+	/** Number of components in exact Y coordinate. */
 	yExactLen: u32;
+	/** Exact W coordinate, list of multiple floats with different exponents to sum together. */
 	wExact: f64[] | null;
+	/** Number of components in exact W coordinate. */
 	wExactLen: u32;
 
+	/** Flag whether intersection has been reported in algorithm output. */
 	reported: boolean;
 }
 
@@ -61,8 +75,7 @@ export class Edge implements Line, Ref {
 		  * 1 if pos < pos2 and
 		  * -1 if pos > pos2
 		  * unless the segment connects ring endpoints.
-		  * Note that indices may not be consecutive,
-		  * because duplicate points are skipped. */
+		  * Note that indices may not be consecutive because duplicate points are skipped. */
 		public dir: -1 | 1
 	) {
 		let x = ring[pos].x;
@@ -84,12 +97,11 @@ export class Edge implements Line, Ref {
 		this.y2 = y2;
 	}
 
-	angleDeltaFrom(key: Line): i32 {
-		// This function only gets called in situations where key is a bundle or edge that touches this edge.
-		// We use (key.x, key.y) here because (this.x, this.y) may equal (key.x2, key.y2).
-		// return orient(key.x, key.y, this.x2, this.y2, key.x2, key.y2);
-		const result = perpDotSign(this.x, this.y, this.x2, this.y2, key.x, key.y, key.x2, key.y2);
-		return (+(result > 0) as i32) - (+(result < 0) as i32);
+	/** Return sign of angle between this edge and another line.
+	  * This function only gets called in situations where key is a bundle or edge that touches this edge. */
+
+	angleDeltaFrom(key: Line): f64 {
+		return perpDotSign(this.x, this.y, this.x2, this.y2, key.x, key.y, key.x2, key.y2);
 	}
 
 	x: number;
@@ -97,11 +109,12 @@ export class Edge implements Line, Ref {
 	x2: number;
 	y2: number;
 
+	/** Set containing all edges collinear with this one. */
 	bundle: EdgeBundle | null = null;
 
 }
 
-/** Collection of overlapping edges. */
+/** Splay tree node containing a collection of collinear edges. */
 
 export class EdgeNode extends SplayItem<Line> {
 
@@ -135,6 +148,8 @@ export class EdgeNode extends SplayItem<Line> {
 	nextFree: EdgeNode | null = null;
 
 }
+
+/** Collection of collinear edges. */
 
 export class EdgeBundle implements Line {
 
@@ -197,7 +212,6 @@ export class EdgeBundle implements Line {
 	}
 
 	deltaFrom(key: Line): f64 {
-		// return orient(this.x, this.y, this.x2, this.y2, key.x, key.y);
 		return perpDotSign(this.x, this.y, this.x2, this.y2, this.x, this.y, key.x, key.y);
 	}
 
